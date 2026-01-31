@@ -1,0 +1,6 @@
+### CORE
+manim==0.19.2
+
+
+### UI 
+streamlit==1.53.1
