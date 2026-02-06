@@ -34,7 +34,7 @@ class AnimationPlanner:
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-3-flash-preview')
     
-    def generate_plan(self, user_prompt: str) -> str:
+    def generate_plan(self, user_prompt: str) -> tuple[str, dict]:
         """
         Generate a structured animation plan from user prompt.
         
@@ -42,7 +42,8 @@ class AnimationPlanner:
             user_prompt: Natural language description of desired animation
             
         Returns:
-            Structured plan as a string with numbered steps
+            Tuple of (plan_text, token_usage_dict)
+            where token_usage_dict contains 'input_tokens' and 'output_tokens'
         """
         system_prompt = """You are an expert at planning mathematical animations for Manim (the animation engine used by 3Blue1Brown).
 
@@ -70,7 +71,14 @@ Now generate a plan for the following request:"""
         full_prompt = f"{system_prompt}\n\nUser Request: {user_prompt}"
         
         response = self.model.generate_content(full_prompt)
-        return response.text
+        
+        # Extract token usage from response metadata
+        token_usage = {
+            'input_tokens': response.usage_metadata.prompt_token_count,
+            'output_tokens': response.usage_metadata.candidates_token_count
+        }
+        
+        return response.text, token_usage
 
 
 class ManimCodeGenerator:
@@ -87,7 +95,7 @@ class ManimCodeGenerator:
         self.model = genai.GenerativeModel('gemini-3-flash-preview')
         self.output_file = Path("src/generated_animations.py")
     
-    def generate_code(self, animation_plan: str, user_prompt: str) -> tuple[str, str]:
+    def generate_code(self, animation_plan: str, user_prompt: str) -> tuple[str, str, dict]:
         """
         Generate Manim code from animation plan.
         
@@ -96,7 +104,8 @@ class ManimCodeGenerator:
             user_prompt: Original user prompt (for context)
             
         Returns:
-            Tuple of (generated_code, class_name)
+            Tuple of (generated_code, class_name, token_usage_dict)
+            where token_usage_dict contains 'input_tokens' and 'output_tokens'
         """
         # Create unique class name based on timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -127,6 +136,12 @@ Generate ONLY the Python code, no explanations. Start with the import statement.
         response = self.model.generate_content(system_prompt)
         generated_code = response.text
         
+        # Extract token usage from response metadata
+        token_usage = {
+            'input_tokens': response.usage_metadata.prompt_token_count,
+            'output_tokens': response.usage_metadata.candidates_token_count
+        }
+        
         # Clean up the code (remove markdown code blocks if present)
         generated_code = self._clean_code(generated_code)
         
@@ -136,7 +151,7 @@ Generate ONLY the Python code, no explanations. Start with the import statement.
         # Write to file
         self.output_file.write_text(generated_code, encoding='utf-8')
         
-        return generated_code, class_name
+        return generated_code, class_name, token_usage
     
     def _clean_code(self, code: str) -> str:
         """Remove markdown code blocks and extra whitespace."""
@@ -243,7 +258,7 @@ def generate_animation(user_prompt: str) -> dict:
         user_prompt: Natural language description of desired animation
         
     Returns:
-        Dictionary with keys: success, plan, code, video_path, error, logs
+        Dictionary with keys: success, plan, code, video_path, error, logs, token_usage
     """
     result = {
         "success": False,
@@ -252,20 +267,49 @@ def generate_animation(user_prompt: str) -> dict:
         "class_name": "",
         "video_path": "",
         "error": "",
-        "logs": ""
+        "logs": "",
+        "token_usage": {
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "plan_input_tokens": 0,
+            "plan_output_tokens": 0,
+            "code_input_tokens": 0,
+            "code_output_tokens": 0,
+            "input_cost_usd": 0.0,
+            "output_cost_usd": 0.0,
+            "total_cost_usd": 0.0
+        }
     }
     
     try:
         # Step 1: Generate plan
         planner = AnimationPlanner()
-        plan = planner.generate_plan(user_prompt)
+        plan, plan_tokens = planner.generate_plan(user_prompt)
         result["plan"] = plan
+        result["token_usage"]["plan_input_tokens"] = plan_tokens['input_tokens']
+        result["token_usage"]["plan_output_tokens"] = plan_tokens['output_tokens']
         
         # Step 2: Generate code
         code_gen = ManimCodeGenerator()
-        code, class_name = code_gen.generate_code(plan, user_prompt)
+        code, class_name, code_tokens = code_gen.generate_code(plan, user_prompt)
         result["code"] = code
         result["class_name"] = class_name
+        result["token_usage"]["code_input_tokens"] = code_tokens['input_tokens']
+        result["token_usage"]["code_output_tokens"] = code_tokens['output_tokens']
+        
+        # Calculate totals and costs
+        total_input = plan_tokens['input_tokens'] + code_tokens['input_tokens']
+        total_output = plan_tokens['output_tokens'] + code_tokens['output_tokens']
+        
+        # Pricing: $0.5 per 1M input tokens, $3 per 1M output tokens
+        input_cost = (total_input / 1_000_000) * 0.5
+        output_cost = (total_output / 1_000_000) * 3.0
+        
+        result["token_usage"]["total_input_tokens"] = total_input
+        result["token_usage"]["total_output_tokens"] = total_output
+        result["token_usage"]["input_cost_usd"] = input_cost
+        result["token_usage"]["output_cost_usd"] = output_cost
+        result["token_usage"]["total_cost_usd"] = input_cost + output_cost
         
         # Step 3: Render animation
         renderer = AnimationRenderer()

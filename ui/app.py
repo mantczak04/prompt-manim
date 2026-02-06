@@ -156,7 +156,7 @@ if generate_button:
             st.markdown('<div class="success-box">✅ <b>Animation generated successfully!</b></div>', unsafe_allow_html=True)
             
             # Display results in tabs
-            tab1, tab2, tab3 = st.tabs(["🎥 Video", "📋 Plan", "💻 Code"])
+            tab1, tab2, tab3, tab4 = st.tabs(["🎥 Video", "📋 Plan", "💻 Code", "📊 Token Usage"])
             
             with tab1:
                 st.subheader("Generated Animation")
@@ -188,6 +188,70 @@ if generate_button:
                 if result.get("logs"):
                     with st.expander("📊 Rendering Logs"):
                         st.text(result["logs"])
+            
+            with tab4:
+                st.subheader("Token Usage & Cost")
+                
+                token_data = result.get("token_usage", {})
+                
+                # Overview metrics in columns
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric(
+                        label="Total Input Tokens",
+                        value=f"{token_data.get('total_input_tokens', 0):,}"
+                    )
+                
+                with col2:
+                    st.metric(
+                        label="Total Output Tokens",
+                        value=f"{token_data.get('total_output_tokens', 0):,}"
+                    )
+                
+                with col3:
+                    total_cost = token_data.get('total_cost_usd', 0)
+                    st.metric(
+                        label="Total Cost",
+                        value=f"${total_cost:.6f} USD"
+                    )
+                
+                st.divider()
+                
+                # Detailed breakdown
+                st.subheader("Detailed Breakdown")
+                
+                # Planning step
+                st.write("**Step 1: Animation Planning**")
+                plan_col1, plan_col2 = st.columns(2)
+                with plan_col1:
+                    st.write(f"- Input tokens: **{token_data.get('plan_input_tokens', 0):,}**")
+                with plan_col2:
+                    st.write(f"- Output tokens: **{token_data.get('plan_output_tokens', 0):,}**")
+                
+                # Code generation step
+                st.write("**Step 2: Code Generation**")
+                code_col1, code_col2 = st.columns(2)
+                with code_col1:
+                    st.write(f"- Input tokens: **{token_data.get('code_input_tokens', 0):,}**")
+                with code_col2:
+                    st.write(f"- Output tokens: **{token_data.get('code_output_tokens', 0):,}**")
+                
+                st.divider()
+                
+                # Cost breakdown
+                st.subheader("Cost Breakdown")
+                st.write("**Pricing (Gemini 3 Flash Preview):**")
+                st.write("- Input: $0.50 per 1M tokens")
+                st.write("- Output: $3.00 per 1M tokens")
+                
+                st.write("")
+                st.write("**Your costs:**")
+                input_cost = token_data.get('input_cost_usd', 0)
+                output_cost = token_data.get('output_cost_usd', 0)
+                st.write(f"- Input cost: **${input_cost:.6f}** ({token_data.get('total_input_tokens', 0):,} tokens)")
+                st.write(f"- Output cost: **${output_cost:.6f}** ({token_data.get('total_output_tokens', 0):,} tokens)")
+                st.write(f"- **Total: ${total_cost:.6f}**")
         
         else:
             # Error handling
