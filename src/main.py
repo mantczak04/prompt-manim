@@ -2,9 +2,6 @@ from manim import *
 
 #!/usr/bin/env python
 
-from manim import *
-
-
 class MinimalExample(Scene):
     def construct(self):
         # Tex

@@ -115,43 +115,23 @@ if generate_button:
     if not prompt:
         st.error("⚠️ Please enter a description of your animation!")
     else:
-        # Progress tracking
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+        # Log display area
+        log_container = st.empty()
+        logs = []
         
-        # Step 1: Planning
-        status_text.text("🤔 Step 1/3: Creating animation plan...")
-        progress_bar.progress(10)
+        def custom_logger(message):
+            """Custom logger that displays messages in Streamlit UI"""
+            logs.append(message)
+            log_container.text("\n".join(logs))
         
-        with st.spinner("Thinking..."):
-            result = generate_animation(prompt)
+        # Generate animation with custom logger
+        with st.spinner("Generating animation..."):
+            result = generate_animation(prompt, logger=custom_logger)
         
-        if result.get("plan"):
-            progress_bar.progress(33)
-            status_text.text("✅ Step 1/3: Plan created!")
-        
-        # Step 2: Code Generation  
-        if result.get("code"):
-            status_text.text("💻 Step 2/3: Generating Manim code...")
-            progress_bar.progress(50)
-            
-            import time
-            time.sleep(0.5)  # Brief pause for UX
-            
-            progress_bar.progress(66)
-            status_text.text("✅ Step 2/3: Code generated!")
-        
-        # Step 3: Rendering
-        if result.get("code"):
-            status_text.text("🎥 Step 3/3: Rendering animation...")
-            progress_bar.progress(75)
-            
-        # Complete
-        progress_bar.progress(100)
+        # Keep final logs visible
+        log_container.text("\n".join(logs))
         
         if result["success"]:
-            status_text.text("✅ Animation complete!")
-            
             # Success message
             st.markdown('<div class="success-box">✅ <b>Animation generated successfully!</b></div>', unsafe_allow_html=True)
             
@@ -255,7 +235,6 @@ if generate_button:
         
         else:
             # Error handling
-            status_text.text("❌ Generation failed")
             
             error_msg = result.get("error", "Unknown error occurred")
             st.markdown(f'<div class="error-box">❌ <b>Error:</b> {error_msg}</div>', unsafe_allow_html=True)

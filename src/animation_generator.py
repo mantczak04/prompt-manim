@@ -45,28 +45,8 @@ class AnimationPlanner:
             Tuple of (plan_text, token_usage_dict)
             where token_usage_dict contains 'input_tokens' and 'output_tokens'
         """
-        system_prompt = """You are an expert at planning mathematical animations for Manim (the animation engine used by 3Blue1Brown).
-
-Given a user's description of an animation they want to create, generate a clear, detailed, step-by-step plan.
-
-Requirements:
-- Break down the animation into sequential steps
-- Be specific about what mathematical objects to create (circles, squares, equations, graphs, etc.)
-- Specify colors, positions, and animations (FadeIn, Transform, Write, etc.)
-- Keep it concise but detailed enough for code generation
-- Number each step (1., 2., 3., etc.)
-
-Example:
-User: "Show a circle transforming into a square"
-Plan:
-1. Create a red circle at the center of the scene
-2. Display the circle with a FadeIn animation
-3. Wait for 1 second
-4. Create a blue square at the same position
-5. Transform the circle into the square
-6. Wait for 1 second before ending
-
-Now generate a plan for the following request:"""
+        prompt_path = Path("prompts/planner_system_prompt.txt")
+        system_prompt = prompt_path.read_text(encoding="utf-8")
         
         full_prompt = f"{system_prompt}\n\nUser Request: {user_prompt}"
         
@@ -111,27 +91,14 @@ class ManimCodeGenerator:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         class_name = f"GeneratedScene_{timestamp}"
         
-        system_prompt = f"""You are an expert Manim developer. Generate complete, working Python code for a Manim animation.
-
-Requirements:
-- Import statement: from manim import *
-- Create a Scene class named EXACTLY: {class_name}
-- Implement the construct() method with the animation
-- Use proper Manim syntax and best practices
-- Include comments explaining key steps
-- Make sure all animations are properly sequenced with self.play() and self.wait()
-- Use appropriate colors and positioning
-- Keep code clean and readable
-
-CRITICAL: The class name MUST be exactly: {class_name}
-
-Here's the animation plan to implement:
-
-{animation_plan}
-
-Original user request: {user_prompt}
-
-Generate ONLY the Python code, no explanations. Start with the import statement."""
+        prompt_path = Path("prompts/code_gen_system_prompt.txt")
+        template = prompt_path.read_text(encoding="utf-8")
+        
+        system_prompt = template.format(
+            class_name=class_name,
+            animation_plan=animation_plan,
+            user_prompt=user_prompt
+        )
         
         response = self.model.generate_content(system_prompt)
         generated_code = response.text
@@ -250,16 +217,22 @@ class AnimationRenderer:
         return None
 
 
-def generate_animation(user_prompt: str) -> dict:
+def generate_animation(user_prompt: str, logger=None) -> dict:
     """
     Complete pipeline: prompt -> plan -> code -> render.
     
     Args:
         user_prompt: Natural language description of desired animation
+        logger: Optional callback function for logging (defaults to print)
         
     Returns:
         Dictionary with keys: success, plan, code, video_path, error, logs, token_usage
     """
+    if logger is None:
+        logger = print
+    
+    logger(f"[INPUT] User prompt: {user_prompt}")
+    
     result = {
         "success": False,
         "plan": "",
@@ -283,19 +256,23 @@ def generate_animation(user_prompt: str) -> dict:
     
     try:
         # Step 1: Generate plan
+        logger("[PLAN] Creating animation plan...")
         planner = AnimationPlanner()
         plan, plan_tokens = planner.generate_plan(user_prompt)
         result["plan"] = plan
         result["token_usage"]["plan_input_tokens"] = plan_tokens['input_tokens']
         result["token_usage"]["plan_output_tokens"] = plan_tokens['output_tokens']
+        logger(f"[PLAN] Plan completed ({plan_tokens['output_tokens']} tokens)")
         
         # Step 2: Generate code
+        logger("[CODE] Generating Manim code...")
         code_gen = ManimCodeGenerator()
         code, class_name, code_tokens = code_gen.generate_code(plan, user_prompt)
         result["code"] = code
         result["class_name"] = class_name
         result["token_usage"]["code_input_tokens"] = code_tokens['input_tokens']
         result["token_usage"]["code_output_tokens"] = code_tokens['output_tokens']
+        logger(f"[CODE] Code generated ({code_tokens['output_tokens']} tokens)")
         
         # Calculate totals and costs
         total_input = plan_tokens['input_tokens'] + code_tokens['input_tokens']
@@ -312,17 +289,23 @@ def generate_animation(user_prompt: str) -> dict:
         result["token_usage"]["total_cost_usd"] = input_cost + output_cost
         
         # Step 3: Render animation
+        logger("[RENDER] Rendering animation video...")
         renderer = AnimationRenderer()
         success, video_or_error, logs = renderer.render(class_name)
         result["logs"] = logs
+        logger("[RENDER] Rendering completed")
         
         if success:
             result["success"] = True
             result["video_path"] = video_or_error
+            logger(f"[SUCCESS] Animation generated successfully: {video_or_error}")
         else:
             result["error"] = video_or_error
+            logger(f"[ERROR] Rendering failed: {video_or_error}")
             
     except Exception as e:
-        result["error"] = f"Error in animation generation pipeline: {str(e)}"
+        error_msg = f"Error in animation generation pipeline: {str(e)}"
+        result["error"] = error_msg
+        logger(f"[ERROR] {error_msg}")
     
     return result
