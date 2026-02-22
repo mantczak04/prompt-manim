@@ -1,0 +1,4 @@
+{
+  "planner_prompt_file": "GOOGLE_PLAN_AGENT.txt",
+  "code_gen_prompt_file": "GOOGLE_CODE_AGENT.txt"
+}

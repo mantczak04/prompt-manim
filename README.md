@@ -86,10 +86,34 @@ Try these to get started:
 - *"Draw a coordinate plane and plot the function f(x) = x²"*
 - *"Show the number π appearing and rotating while changing colors"*
 
+## ⚙️ Prompt Configuration
+
+You can switch planner/code-generation master prompts without changing Python code.
+
+1. Create as many `.txt` prompt templates as you want inside `prompts/`
+2. Edit `prompts/prompt_config.json`
+3. Set which file is active for each agent:
+
+```json
+{
+   "planner_prompt_file": "planner_system_prompt.txt",
+   "code_gen_prompt_file": "code_gen_system_prompt.txt"
+}
+```
+
+- `planner_prompt_file`: prompt used for plan generation
+- `code_gen_prompt_file`: prompt used for Manim code generation
+
+Both values are file names relative to the `prompts/` directory.
+
 ## 🏗️ Project Structure
 
 ```
 prompt-manim/
+├── prompts/
+│   ├── planner_system_prompt.txt   # Planner master prompt template
+│   ├── code_gen_system_prompt.txt  # Code generator master prompt template
+│   └── prompt_config.json          # Active prompt file selection
 ├── src/
 │   ├── animation_generator.py    # Core logic: LLM + Manim rendering
 │   ├── generated_animations.py   # Auto-generated animation code

@@ -9,6 +9,7 @@ This module handles the complete pipeline for generating Manim animations from n
 
 import os
 import re
+import json
 import subprocess
 import time
 from pathlib import Path
@@ -18,6 +19,65 @@ from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
+
+
+PROMPTS_DIR = Path("prompts")
+PROMPT_CONFIG_PATH = PROMPTS_DIR / "prompt_config.json"
+DEFAULT_PROMPT_CONFIG = {
+    "planner_prompt_file": "planner_system_prompt.txt",
+    "code_gen_prompt_file": "code_gen_system_prompt.txt",
+}
+
+
+def _render_prompt_template(template: str, values: dict[str, str]) -> str:
+    """Replace known placeholders without failing on unknown placeholders."""
+    rendered = template
+    for key, value in values.items():
+        rendered = rendered.replace(f"{{{key}}}", value)
+    return rendered
+
+
+def _load_prompt_config() -> dict:
+    """Load prompt file selection from config, with defaults as fallback."""
+    if not PROMPT_CONFIG_PATH.exists():
+        return DEFAULT_PROMPT_CONFIG.copy()
+
+    try:
+        config = json.loads(PROMPT_CONFIG_PATH.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"Invalid JSON in {PROMPT_CONFIG_PATH}: {exc.msg}"
+        ) from exc
+
+    merged_config = DEFAULT_PROMPT_CONFIG.copy()
+    merged_config.update({k: v for k, v in config.items() if isinstance(v, str)})
+    return merged_config
+
+
+def _get_prompt_template(config_key: str) -> str:
+    """Read selected prompt template from prompts directory based on config key."""
+    config = _load_prompt_config()
+    selected_file = config.get(config_key)
+
+    if not isinstance(selected_file, str) or not selected_file.strip():
+        raise ValueError(f"Prompt config key '{config_key}' must be a non-empty string")
+
+    prompt_path = (PROMPTS_DIR / selected_file).resolve()
+    prompts_dir_resolved = PROMPTS_DIR.resolve()
+
+    try:
+        prompt_path.relative_to(prompts_dir_resolved)
+    except ValueError as exc:
+        raise ValueError(
+            f"Prompt file for '{config_key}' must be inside '{PROMPTS_DIR}'"
+        ) from exc
+
+    if not prompt_path.exists():
+        raise FileNotFoundError(
+            f"Configured prompt file not found for '{config_key}': {prompt_path}"
+        )
+
+    return prompt_path.read_text(encoding="utf-8")
 
 
 class AnimationPlanner:
@@ -45,10 +105,14 @@ class AnimationPlanner:
             Tuple of (plan_text, token_usage_dict)
             where token_usage_dict contains 'input_tokens' and 'output_tokens'
         """
-        prompt_path = Path("prompts/planner_system_prompt.txt")
-        system_prompt = prompt_path.read_text(encoding="utf-8")
-        
-        full_prompt = f"{system_prompt}\n\nUser Request: {user_prompt}"
+        planner_template = _get_prompt_template("planner_prompt_file")
+        full_prompt = _render_prompt_template(
+            planner_template,
+            {"user_prompt": user_prompt}
+        )
+
+        if "{user_prompt}" not in planner_template:
+            full_prompt = f"{full_prompt}\n\nUser Request: {user_prompt}"
         
         response = self.model.generate_content(full_prompt)
         
@@ -91,13 +155,16 @@ class ManimCodeGenerator:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         class_name = f"GeneratedScene_{timestamp}"
         
-        prompt_path = Path("prompts/code_gen_system_prompt.txt")
-        template = prompt_path.read_text(encoding="utf-8")
-        
-        system_prompt = template.format(
-            class_name=class_name,
-            animation_plan=animation_plan,
-            user_prompt=user_prompt
+        template = _get_prompt_template("code_gen_prompt_file")
+
+        system_prompt = _render_prompt_template(
+            template,
+            {
+                "class_name": class_name,
+                "animation_plan": animation_plan,
+                "plan_output": animation_plan,
+                "user_prompt": user_prompt,
+            }
         )
         
         response = self.model.generate_content(system_prompt)
